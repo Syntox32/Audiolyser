@@ -14,7 +14,7 @@ import gzip
 
 import alsaaudio as aa
 import numpy as np
-import decoder
+# import decoder
 import fft
 
 HOST = "192.168.1.218"
@@ -157,13 +157,18 @@ def main():
 	filename = save_cache_to_file(cache)
 	limits = read_cache(filename)
 	
+	m = np.matrix(limits)
+	print "max: ", m.max()
+	print "mean:", m.mean()
+	print "newmin: ", m.mean() - (m.max() - m.mean())
+
 	#sys.exit(1)
 	print "lol"
 
 	open_spi(0,0)
 	gen_gamma_table()
 
-	SPI.max_speed_hz = 44100 #1300000
+	SPI.max_speed_hz = 1000000
 
 	print "lol"
 
@@ -179,29 +184,43 @@ def main():
 
 	#sys.exit()
 
-	socke = prepare_socket()
 
 	print "Listenting for things"
-	r = socke.recv(_SOCKET_CHUNK_SIZE)
+	socke = prepare_socket()
 	it = 1
-	i = 10
+	i = 0
 	prev = 0
 
-	while r != '':
-		i += 1
+	r = socke.recv(_SOCKET_CHUNK_SIZE)
+
+	musicfile = wave.open("downtheroad.wav", 'r')
+	sample_rate = musicfile.getframerate()
+	num_channels = musicfile.getnchannels()
+	output = aa.PCM(aa.PCM_PLAYBACK, aa.PCM_NORMAL)
+	output.setchannels(num_channels)
+	output.setrate(sample_rate)
+	output.setformat(aa.PCM_FORMAT_S16_LE)
+	output.setperiodsize(CHUNK_SIZE)
+
+	data = musicfile.readframes(CHUNK_SIZE)	
+	while data != '':
+		output.write(data)
+		#r = socke.recv(_SOCKET_CHUNK_SIZE)
 		it += 1
 		if it >= 31:
 			it = 0
 		l = (int((limits[i][2] - 6) * 3)) + 1
+		i += 1
 		#print "l: ", str(l)
 		#print "L: ", l
 		#arr = [GAMMA[255] for _ in range(0, l)]
 		#for _ in range(0, (32 - l)):
 		#	arr.append(0)
-		write_spi(LEDS[(l + prev) / 2]) # gen_mono_arr(32, ))
+		write_spi(LEDS[l][::-1]) # gen_mono_arr(32, ))
 		prev = l
 
-		r = socke.recv(_SOCKET_CHUNK_SIZE)
+		data = musicfile.readframes(CHUNK_SIZE)
+
 		#print r
 
 	print "it finished yay"
