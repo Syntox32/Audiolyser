@@ -3,7 +3,7 @@ import os
 import sys
 import fft
 import math
-import spi
+# import spi
 import gzip
 import base64
 import socket
@@ -149,7 +149,6 @@ def main():
 	#(conn, addr) = _SOCKET.accept()
 	#print "Connection accpeted"
 
-	conn = prepare_socket()
 
 	print str(d.getnchannels())
 	print str(d.getframerate())
@@ -164,9 +163,12 @@ def main():
 	data = d.readframes(CHUNK_SIZE)
 	it = 0
 
+	conn = prepare_socket()
+	conn.send('kek')
+
 	while data != '':
-		conn.send("wc:" + str(it))
-		#print "wc:" + str(it)
+		#conn.send("wc:" + str(it))
+		print "wc:" + str(it)
 		it += 1
 		#print limits[it - 1]
 		stream.write(data)
