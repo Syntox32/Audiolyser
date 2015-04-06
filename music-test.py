@@ -24,6 +24,64 @@ _GIOP_LEN = 5 # number of 'bars'
 _N_CHANNELS = 2 # use 1 if mono
 _FREQ_LIMITS = [ [20, 1000], [1000, 5000], [5000, 7000], [7000, 10000], [10000, 15000] ]
 
+
+class LEDServer:
+	def __init__(self, host, port):
+		self.host = host
+		self.port = port
+		self.running = False
+		self.connected = False
+		self.connection = None
+		self._buffer_size = 1024
+		self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+	def start(self):
+		print "Starting server.."
+		self._socket.bind((self.host, self.port))
+		self.running = True
+		print "Running on: {0}:{1}".format(self.host, str(self.port))
+
+	def listen(self):
+		if self.connected:
+			print "There is already an existing connection."
+			return
+		print "Listening.."
+		self._socket.listen(1)
+		(conn, addr) = self._socket.accept()
+		self.connection = conn
+		self.connected = True
+		print "Accepted connection from: {0}:{1}".format(addr[0], str(addr[1]))
+	
+	def wait_command(self, command, resp=True):
+		r = self._socket.recv(self._buffer_size)
+		while r != command:
+			r = self._socket.recv(self._buffer_size)
+		print "Recieved command:", command
+		self.connection.send(str(resp))
+
+	def send_command(self, command):
+		self.connection.send(command)
+		r = self.connection.recv(self._buffer_size)
+		if r == command:
+			print "Command '{0}' returned True".format(command)
+			return True
+		else:
+			print "Command '{0}' returned False".format(command)
+			return False
+
+	def disconnect(self):
+		if self.connected:
+			self.connection.close()
+			self.connected = False
+			print "Disconnected from client.."
+
+	def close(self):
+		print "Closing server.."
+		if self.running:
+			if self.connected:
+				self.connection.close()
+			self._socket.close()
+
 def write_cache(filename):
 	print "Caching file: ", filename
 	d = wave.open(os.path.abspath(filename))
@@ -122,6 +180,16 @@ def main():
 	port = args.port
 	song = os.path.abspath(args.song_path)
 	song_name = os.path.basename(song)
+
+	server = LEDServer(host, port)
+	server.start()
+	server.listen()
+
+	resp = server.send_command("amazing")
+
+	server.close()
+
+	sys.exit(0)
 
 	print "Playing:", song_name
 

@@ -34,6 +34,42 @@ CHUNK_SIZE = 2048
 
 # Helper functions
 
+class LEDClient:
+	def __init__(self, host, port):
+		self.host = host
+		self.port = port
+		self.connected = False
+		self._buffer_size = 1024
+		self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+	def connect(self):
+		print "Connecting to: {0}:{1}".format(self.host, str(self.port))
+		self._socket.connect((self.host, self.port))
+		self.connected = True
+		print "Connection accepted.."
+
+	def wait_command(self, command, resp=True):
+		r = self._socket.recv(self._buffer_size)
+		while r != command:
+			r = self._socket.recv(self._buffer_size)
+		print "Recieved command:", command
+		self._socket.send(str(resp))
+
+	def send_command(self, command):
+		self._socket.send(command)
+		r = self._socket.recv(self._buffer_size)
+		if r == command:
+			print "Command '{0}' returned True".format(command)
+			return True
+		else:
+			print "Command '{0}' returned False".format(command)
+			return False
+
+	def close(self):
+		print "Closing client.."
+		if self.connected:
+			self._socket.close()
+
 def gen_gamma_table():
 	gamma = bytearray(256)
 	for i in range(256):
@@ -152,6 +188,15 @@ def main():
 	host = args.host_address
 	song = os.path.abspath(args.song_path)
 	song_name = os.path.basename(song)
+
+	client = LEDClient(host, port)
+	client.connect()
+
+	client.wait_command("amazing", False)
+
+	client.close()
+
+	sys.exit(0)
 
 	print "Playing:", song_name
 
