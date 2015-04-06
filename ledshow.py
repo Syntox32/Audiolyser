@@ -14,7 +14,6 @@ import gzip
 
 import alsaaudio as aa
 import numpy as np
-# import decoder
 import fft
 
 HOST = "192.168.1.218"
@@ -22,8 +21,8 @@ PORT = 1337
 SOCK = None
 SOCK_ONLINE = True
 SOCK_THREAD = None
-_SOCKET_CHUNK_SIZE = 512
-_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+SOCKET_CHUNK_SIZE = 512
+SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 SPI = spidev.SpiDev()
 SPI_INIT = False
@@ -40,9 +39,7 @@ def gen_gamma_table():
 	for i in range(256):
 		# https://github.com/scottjgibson/PixelPi/blob/master/pixelpi.py#L604
 		gamma[i] = int(pow(float(i) / 255.0, 2.5) * 255.0)
-	global GAMMA
-	GAMMA = gamma
-	print "Generated gamma table"
+	return gamma
 
 def gen_mono_arr(numleds, intcolor):
 	return [GAMMA[intcolor] for _ in range(0, numleds * BITS_PER_PIXEL)]
@@ -54,14 +51,20 @@ def open_spi(x, d):
 	global SPI_INIT
 	SPI.open(x, d)
 	SPI_INIT = True
-	print "SPI Interface ready for abuse -> /dev/spidev" + str(x) + "." + str(d)
+	print "SPI Interface ready -> /dev/spidev" + str(x) + "." + str(d)
+
+	SPI.max_speed_hz = 1000000
+
+	print "SPI Mode: " + str(SPI.mode)
+	print "SPI Bits Per Word: " + str(SPI.bits_per_word)
+	print "SPI Max Speed: " + str(SPI.max_speed_hz) + " Hz (" + str(SPI.max_speed_hz/ 1000) + " KHz)"
 
 def write_spi(byte_arr):
 	SPI.writebytes(byte_arr)
 
 def close_spi():
 	if SPI_INIT != False:
-		print "\nClosing interface.."
+		print "Closing interface.."
 		off = gen_mono_arr(32, 0)
 		write_spi(off)
 		SPI.close()
@@ -69,8 +72,8 @@ def close_spi():
 # Main or something
 
 def shutdown():
-	print "shutdown pls work"
-	_SOCKET.close()
+	print "Shutting down.."
+	SOCKET.close()
 	close_spi()
 	sys.exit(1)
 
@@ -89,7 +92,6 @@ def write_cache(filename):
 	with gzip.open(cache_filename, 'wb') as f:
 		for i in range(0, len(limits)):
 			line = ",".join([str(limits[i][j]) for j in range(0, len(limits[i]))]) + "\n"
-			#print line
 			f.write(line)
 	print "Length of limits: ", str(len(limits))
 	return limits
@@ -102,40 +104,27 @@ def read_cache(filename):
 		line = f.readline()
 		while line != '' or line == '\n':
 			line = line.replace('\n', '').split(',')
-			#print [float(line[i]) for i in range(0, len(line))]
 			limits.append([float(line[i]) for i in range(0, len(line))])
 			line = f.readline()
 	print "Cache reading completed: " + str(len(limits)) + " entries read"
 	return limits
 
-def recieve_cache(close_socket=True):
-	#_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def recieve_cache():
 	print "Listening.."
-	_SOCKET.connect((HOST, PORT))
+	SOCKET.connect((HOST, PORT))
 	print "Connected to: ", (HOST, PORT)
-	data = _SOCKET.recv(_SOCKET_CHUNK_SIZE)
+	data = SOCKET.recv(SOCKET_CHUNK_SIZE)
 	buff = ""
 	while data != '':
 		buff += data
-		data = _SOCKET.recv(_SOCKET_CHUNK_SIZE)
-		#print str(len(data))
-		#if "done" in data:
-		#	break
+		data = SOCKET.recv(SOCKET_CHUNK_SIZE)
 	print "Length of recv: ", len(buff)
-	#if close_socket:
-	#	print "Closing connection"
-	_SOCKET.close()
-	#_SOCKET.send("done")
+	SOCKET.close()
 	return buff # return base64 encoded gzip data
 
 def save_cache_to_file(raw_base64_cache):
-	print raw_base64_cache[:10]
 	name = raw_base64_cache.split(':')[0]
 	data = raw_base64_cache.split(':')[1]
-	print name
-	print data[:30]
-	#print name
-	#print data[:10] + ".." + data[10:]
 	cache_filename = name + ".cache"
 	cache_path = os.path.abspath(cache_filename)
 	decode_cache = base64.b64decode(data)
@@ -145,16 +134,35 @@ def save_cache_to_file(raw_base64_cache):
 	return cache_filename
 
 def prepare_socket():
-	_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	print "Connecting on port: ", PORT
-	_SOCKET.connect((HOST, PORT))
+	SOCKET.connect((HOST, PORT))
 	print "Connected to client: ", (HOST, PORT)
-	_SOCKET_INIT = True
-	return _SOCKET
+	SOCKET_INIT = True
+	return SOCKET
 
 def main():
+	parser = argparse.ArgumentParser(description='Client for RPi LEDs')
+	parser.add_argument('-p', '--port', type=int, default=1337)
+	parser.add_argument('-i', '--host-address', required=True)
+	parser.add_argument('-s', '--song-path', required=True)
+	args = parser.parse_args()
+
+	port = args.port
+	host = args.host_address
+	song = os.path.abspath(args.song_path)
+	song_name = os.path.basename(song)
+
+	print "Playing:", song_name
+
+	print host
+	print str(port)
+	print song
+	print song_name
+
 	cache = recieve_cache()
 	filename = save_cache_to_file(cache)
+	print "FILENAME: " + filename
 	limits = read_cache(filename)
 	
 	m = np.matrix(limits)
@@ -162,28 +170,17 @@ def main():
 	print "mean:", m.mean()
 	print "newmin: ", m.mean() - (m.max() - m.mean())
 
-	#sys.exit(1)
-	print "lol"
-
 	open_spi(0,0)
-	gen_gamma_table()
-
-	SPI.max_speed_hz = 1000000
-
-	print "lol"
+	GAMMA = gen_gamma_table()
 
 	LEDS = []
 	for i in range(0, 32):
 		l = []
 		for _ in range(0, i):
-			l.extend([GAMMA[255],GAMMA[0],GAMMA[0]])
+			l.extend([GAMMA[255],GAMMA[255],GAMMA[255]])
 		for _ in range(0, 32 - i):
 			l.extend([0x00, 0x00, 0x00])
-		#print l
 		LEDS.append(l)
-
-	#sys.exit()
-
 
 	print "Listenting for things"
 	socke = prepare_socket()
@@ -191,8 +188,10 @@ def main():
 	i = 0
 	prev = 0
 
-	r = socke.recv(_SOCKET_CHUNK_SIZE)
+	r = socke.recv(SOCKET_CHUNK_SIZE)
 
+	# Create a dummy stream for syncing the audio
+	# Seems to work better then expected
 	musicfile = wave.open("downtheroad.wav", 'r')
 	sample_rate = musicfile.getframerate()
 	num_channels = musicfile.getnchannels()
@@ -202,79 +201,22 @@ def main():
 	output.setformat(aa.PCM_FORMAT_S16_LE)
 	output.setperiodsize(CHUNK_SIZE)
 
-	data = musicfile.readframes(CHUNK_SIZE)	
+	data = musicfile.readframes(CHUNK_SIZE)
 	while data != '':
 		output.write(data)
-		#r = socke.recv(_SOCKET_CHUNK_SIZE)
 		it += 1
 		if it >= 31:
 			it = 0
 		l = (int((limits[i][2] - 6) * 3)) + 1
 		i += 1
-		#print "l: ", str(l)
-		#print "L: ", l
-		#arr = [GAMMA[255] for _ in range(0, l)]
-		#for _ in range(0, (32 - l)):
-		#	arr.append(0)
-		write_spi(LEDS[l][::-1]) # gen_mono_arr(32, ))
+		write_spi(LEDS[l][::-1])
 		prev = l
 
 		data = musicfile.readframes(CHUNK_SIZE)
 
-		#print r
-
-	print "it finished yay"
-	
-	#parser = argparse.ArgumentParser()
-	#filegroup = parser.add_mutually_exclusive_group()
-	#filegroup.add_argument('-f', '--file', help="file to play")
-	#args = parser.parse_args()
-	#SOCK = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	#awd = SOCK.connect((HOST, PORT))
-	#print "Connected to: "
-	#print awd
-	#print "lol"
-	#SOCK_THREAD = threading.Thread(target=handle_master)
-	#SOCK_THREAD.start()
-
-	#if args.file == None:
-	#	print "No file to play, closing app"
-	#	print "actually no lol"
-	#else:
-	#	print "Playing: " + args.file + "\n"
-
-	#file_path = os.path.abspath(args.file)
-	#music_file = decoder.open(file_path)
-	#sample_rate = music_file.getframerate()
-	#num_channels = music_file.getnchannels()
-	#seconds = music_file.getnframes() / sample_rate
-
-	#print str(sample_rate)
-	#print str(num_channels)
-	#print str(music_file.getnframes())
-	#print str(music_file.getnframes() / sample_rate) + "s"
-	#print str(int(math.floor(seconds / 60))) + "m "+ str(seconds % 60) + "s"
-
-	#row = 0
-	#print CHUNK_SIZE
-	#data = None
-	# for i in range(0, 40):
-	#data = music_file.readframes(CHUNK_SIZE)
-
-	#print "sum or something", np.sum(data)
-
-	#print "data length: ", len(data)
-	#freq_limits = fft.calculate_levels(data, CHUNK_SIZE, sample_rate, [ [20, 1000], [1000, 5000], [5000, 7000], [7000, 10000], [10000, 150000] ], 5, 2)
-
-	#print freq_limits
-
-	#arr = gen_mono_arr(32, 255)
-	#write_spi(arr)
-	#print str(len(sys.argv))
-
-	#print "yay it worked"
+	print "Finish up, closing down.."
 	socke.close()
-	_SOCKET.close()
+	SOCKET.close()
 	close_spi()
 
 if __name__ == '__main__':
@@ -282,6 +224,6 @@ if __name__ == '__main__':
 	try:
 		main()
 	except KeyboardInterrupt:
-		print "Exit(1): KeyboardInterrupt"
-		_SOCKET.close()
+		print "losing down.."
+		SOCKET.close()
 		close_spi()

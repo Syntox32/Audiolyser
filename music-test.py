@@ -3,16 +3,15 @@ import os
 import sys
 import fft
 import math
-# import spi
 import gzip
 import base64
 import socket
-
+import argparse
 import pyaudio as pa
 import numpy as np
 
 SONG = "downtheroad.wav"
-HOST = "192.168.1.218"
+HOST = socket.gethostbyname(socket.gethostname())
 PORT = 1337
 CHUNK_SIZE = 2048
 
@@ -40,13 +39,11 @@ def write_cache(filename):
 	with gzip.open(cache_filename, 'wb') as f:
 		for i in range(0, len(limits)):
 			line = ",".join([str(limits[i][j]) for j in range(0, len(limits[i]))]) + "\n"
-			#print line
 			f.write(line)
 	print "Length of limits: ", str(len(limits))
 	return limits
 
 def read_cache(filename):
-	#cache_filename = os.path.abspath(os.path.splitext(filename)[0] + ".cache")
 	cache_filename = get_cache_path(filename)
 	print "Reading cache: ", os.path.splitext(filename)[0] + ".cache"
 	limits = []
@@ -54,7 +51,6 @@ def read_cache(filename):
 		line = f.readline()
 		while line != '' or line == '\n':
 			line = line.replace('\n', '').split(',')
-			#print [float(line[i]) for i in range(0, len(line))]
 			limits.append([float(line[i]) for i in range(0, len(line))])
 			line = f.readline()
 	print "Cache reading completed: " + str(len(limits)) + " entries read"
@@ -71,7 +67,6 @@ def check_if_cache_exists(filename):
 	return os.path.isfile(cache_path)
 
 def transfer_cache(filename, close_socket=True):
-	#cache_filename = os.path.abspath(os.path.splitext(filename)[0] + ".cache")
 	cache_filename = get_cache_path(filename)
 	print "Transfering cache: ", os.path.splitext(filename)[0] + ".cache"
 	base_data = ""
@@ -83,8 +78,6 @@ def transfer_cache(filename, close_socket=True):
 	print "Listening on port: ", PORT
 	_SOCKET.listen(1)
 	(conn, addr) = _SOCKET.accept()
-	#_CONN = conn
-	#global _CONN
 	print "Client connected from: ", addr
 	print "Base64 Length: ", str(len(base_data))
 	sent = conn.send(base_data[:_SOCKET_CHUNK_SIZE])
@@ -92,20 +85,10 @@ def transfer_cache(filename, close_socket=True):
 	while sent != 0:
 		sent = conn.send(base_data[sent_bytes:(sent_bytes + _SOCKET_CHUNK_SIZE)])
 		sent_bytes += sent
-	#conn.send('done')
-	#print base_data[10:]
 	print "Base64 Sent: ", str(sent_bytes)
-	#feedback = conn.recv(_SOCKET_CHUNK_SIZE)
-	#if "done" in feedback:
-	#	print "cool"
-
-	#if close_socket:
-	#	print "Closing connection.."
 	conn.close()
-	#	print "Closing socket.."
 	_SOCKET.close()
 	print "Transfer completed, cya client.."
-	# print base_data[:100]
 
 def prepare_socket():
 	_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -124,10 +107,27 @@ def close_socket():
 		_SOCKET.close()
 
 def main():
-	print os.getcwd()
-	print os.path.abspath(SONG)
-	print "lol playing: ", SONG
+	parser = argparse.ArgumentParser(description='Server for RPi LEDs')
+	parser.add_argument('-p', '--port', type=int, default=1337)
+	parser.add_argument('-i', '--host-address', required=False)
+	parser.add_argument('-s', '--song-path', required=True)
+	args = parser.parse_args()
 
+	host = ''
+	if args.host_address is None:
+		host = socket.gethostbyname(socket.gethostname())
+	else:
+		host = args.host_address
+	
+	port = args.port
+	song = os.path.abspath(args.song_path)
+	song_name = os.path.basename(song)
+
+	print "Playing:", song_name
+
+	print str(port)
+	print host
+	print args.song_path
 
 	# if check_if_cache_exists == False:
 	write_cache(SONG)
@@ -138,17 +138,9 @@ def main():
 	print "max: ", m.max()
 	print "mean:", m.mean()
 	print "newmin: ", m.mean() - (m.max() - m.mean())
- 
-	#sys.exit(1)
 
 	d = wave.open(os.path.abspath(SONG))
 	p = pa.PyAudio()
-
-	#print "Listening for another connectionl lol fix this pls"
-	#_SOCKET.listen(1)
-	#(conn, addr) = _SOCKET.accept()
-	#print "Connection accpeted"
-
 
 	print str(d.getnchannels())
 	print str(d.getframerate())
@@ -167,15 +159,9 @@ def main():
 	conn.send('kek')
 
 	while data != '':
-		#conn.send("wc:" + str(it))
-		print "wc:" + str(it)
 		it += 1
-		#print limits[it - 1]
 		stream.write(data)
 		data = d.readframes(CHUNK_SIZE)
-		#freq_limits = fft.calculate_levels(data, CHUNK_SIZE, sample_rate, _FREQ_LIMITS, _GIOP_LEN, _N_CHANNELS)
-		#freq_limits = [int(math.floor(freq_limits[i])) for i in range(0, len(freq_limits))]
-		# print (freq_limits)
 
 	conn.send('')
 	print "Finished stream thing"
