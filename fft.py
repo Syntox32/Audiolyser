@@ -56,7 +56,7 @@ def calculate_levels(data, chunk_size, sample_rate, frequency_limits, gpiolen, c
     # Calculate the power spectrum
     power = np.abs(fourier) ** 2
 
-    matrix = [0 for i in range(gpiolen)]  #np.zeros(gpiolen)
+    matrix = [0 for i in range(gpiolen)]
     for i in range(gpiolen):
         # take the log10 of the resulting sum to approximate how human ears 
         # perceive sound levels

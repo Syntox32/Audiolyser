@@ -10,14 +10,6 @@ import argparse
 import pyaudio as pa
 import numpy as np
 
-CHUNK_SIZE = 2048
-
-_MAX_FREQ = 15000
-_MIN_FREQ = 20
-_GIOP_LEN = 5 # number of bars
-_N_CHANNELS = 2 # use 1 if mono
-_FREQ_LIMITS = [ [20, 1000], [1000, 5000], [5000, 7000], [7000, 10000], [10000, 15000] ]
-
 class LEDClient:
 	def __init__(self, host, port):
 		self.host = host
@@ -62,6 +54,25 @@ class LEDClient:
 		if self.connected:
 			self._socket.close()
 
+class LimitsHandler():
+	def __init__(self):
+		self.chunk_size = 2048
+		self.max_freq = 15000
+		self.min_freq = 20
+		self.gpio_len = 5 # number of bars
+		self.n_channnels = 2 # use 1 if mono
+		self.freq_limits = [ [20, 1000], [1000, 5000], [5000, 7000], [7000, 10000], [10000, 15000] ]
+
+	def generate_limits(self, wave_file):
+		sample_rate = wave_file.getframerate()
+		data = wave_file.readframes(self.chunk_size)
+		limits = []
+		while data != '':
+			limits.append(fft.calculate_levels(
+				data, self.chunk_size, sample_rate, self.freq_limits, self.gpio_len, self.n_channnels))
+			data = wave_file.readframes(self.chunk_size)
+		return limits
+
 def main():
 	"""
 	Client for the RPi LED thing
@@ -80,7 +91,12 @@ def main():
 	client = LEDClient(host, port)
 	client.connect()
 
+	limits = LimitsHandler()
+
 	client.wait_command("amazing", True)
+	
+	f = wave.open(song)
+	levels = limits.generate_limits(f)
 
 	client.close()
 
