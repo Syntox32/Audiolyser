@@ -10,78 +10,142 @@ import argparse
 import pyaudio as pa
 import numpy as np
 
-SONG = "downtheroad.wav"
-HOST = socket.gethostbyname(socket.gethostname())
-PORT = 1337
 CHUNK_SIZE = 2048
 
-_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-_SOCKET_CHUNK_SIZE = 512
-_SOCKET_INIT = True
 _MAX_FREQ = 15000
 _MIN_FREQ = 20
-_GIOP_LEN = 5 # number of 'bars'
+_GIOP_LEN = 5 # number of bars
 _N_CHANNELS = 2 # use 1 if mono
 _FREQ_LIMITS = [ [20, 1000], [1000, 5000], [5000, 7000], [7000, 10000], [10000, 15000] ]
 
-
-class LEDServer:
+class LEDClient:
 	def __init__(self, host, port):
 		self.host = host
 		self.port = port
-		self.running = False
 		self.connected = False
-		self.connection = None
 		self._buffer_size = 1024
 		self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-	def start(self):
-		print "Starting server.."
-		self._socket.bind((self.host, self.port))
-		self.running = True
-		print "Running on: {0}:{1}".format(self.host, str(self.port))
-
-	def listen(self):
-		if self.connected:
-			print "There is already an existing connection."
-			return
-		print "Listening.."
-		self._socket.listen(1)
-		(conn, addr) = self._socket.accept()
-		self.connection = conn
+	def connect(self):
+		print "Connecting to: {0}:{1}".format(self.host, str(self.port))
+		self._socket.connect((self.host, self.port))
 		self.connected = True
-		print "Accepted connection from: {0}:{1}".format(addr[0], str(addr[1]))
-	
+		print "Connection accepted.."
+
 	def wait_command(self, command, resp=True):
 		r = self._socket.recv(self._buffer_size)
 		while r != command:
 			r = self._socket.recv(self._buffer_size)
 		print "Recieved command:", command
-		self.connection.send(str(resp))
+		self._socket.sendall(str(resp))
+
 
 	def send_command(self, command):
-		self.connection.send(command)
-		r = self.connection.recv(self._buffer_size)
+		self._socket.sendall(command)
+		print "IM DOING SOMETHING"
+		r = self._socket.recv(self._buffer_size)
 		if r == command:
 			print "Command '{0}' returned True".format(command)
 			return True
 		else:
 			print "Command '{0}' returned False".format(command)
 			return False
+	
+	def send(self, data):
+		self._socket.sendall(data)
 
-	def disconnect(self):
-		if self.connected:
-			self.connection.close()
-			self.connected = False
-			print "Disconnected from client.."
+	def recv(self):
+		return self._socket.recv(self._buffer_size)
 
 	def close(self):
-		print "Closing server.."
-		if self.running:
-			if self.connected:
-				self.connection.close()
+		print "Closing client.."
+		if self.connected:
 			self._socket.close()
 
+def main():
+	"""
+	Client for the RPi LED thing
+	"""
+	parser = argparse.ArgumentParser(description='Client for RPi LEDs')
+	parser.add_argument('-p', '--port', type=int, default=1337)
+	parser.add_argument('-i', '--host-address', required=True)
+	parser.add_argument('-s', '--song-path', required=True)
+	args = parser.parse_args()
+
+	port = args.port
+	host = args.host_address
+	song = os.path.abspath(args.song_path)
+	song_name = os.path.basename(song)
+	
+	client = LEDClient(host, port)
+	client.connect()
+
+	client.wait_command("amazing", True)
+
+	client.close()
+
+	sys.exit(0)
+
+	print "Playing:", song_name
+
+	print str(port)
+	print host
+	print args.song_path
+
+	# if check_if_cache_exists == False:
+	write_cache(SONG)
+	transfer_cache(SONG)
+	limits = read_cache(SONG)
+
+	m = np.matrix(limits)
+	print "max: ", m.max()
+	print "mean:", m.mean()
+	print "newmin: ", m.mean() - (m.max() - m.mean())
+
+	d = wave.open(os.path.abspath(SONG))
+	p = pa.PyAudio()
+
+	print str(d.getnchannels())
+	print str(d.getframerate())
+	print str(d.getsampwidth())
+
+	stream = p.open(format=p.get_format_from_width(d.getsampwidth()),
+		channels=d.getnchannels(),
+		rate=d.getframerate(),
+		output=True)
+
+	sample_rate = d.getframerate()
+	data = d.readframes(CHUNK_SIZE)
+	it = 0
+
+	conn = prepare_socket()
+	conn.send('kek')
+
+	while data != '':
+		it += 1
+		stream.write(data)
+		data = d.readframes(CHUNK_SIZE)
+
+	conn.send('')
+	print "Finished stream thing"
+
+	conn.close()
+	close_socket()
+
+	stream.stop_stream()
+	stream.close()
+
+	p.terminate()
+
+	print "done lol"
+
+if __name__ == '__main__':
+	try:
+		main()
+	except KeyboardInterrupt:
+		print "Closing due to KeyboardInterrupt.."
+
+"""
 def write_cache(filename):
 	print "Caching file: ", filename
 	d = wave.open(os.path.abspath(filename))
@@ -147,106 +211,4 @@ def transfer_cache(filename, close_socket=True):
 	conn.close()
 	_SOCKET.close()
 	print "Transfer completed, cya client.."
-
-def prepare_socket():
-	_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	print "Binding to client: ", (HOST, PORT)
-	_SOCKET.bind((HOST, PORT))
-	print "Listening on port: ", PORT
-	_SOCKET.listen(1)
-	(conn, addr) = _SOCKET.accept()
-	print "Client connected from: ", addr
-	_SOCKET_INIT = True
-	return conn # return connection
-
-def close_socket():
-	if _SOCKET_INIT:
-		print "Closing socket.."
-		_SOCKET.close()
-
-def main():
-	parser = argparse.ArgumentParser(description='Server for RPi LEDs')
-	parser.add_argument('-p', '--port', type=int, default=1337)
-	parser.add_argument('-i', '--host-address', required=False)
-	parser.add_argument('-s', '--song-path', required=True)
-	args = parser.parse_args()
-
-	host = ''
-	if args.host_address is None:
-		host = socket.gethostbyname(socket.gethostname())
-	else:
-		host = args.host_address
-	
-	port = args.port
-	song = os.path.abspath(args.song_path)
-	song_name = os.path.basename(song)
-
-	server = LEDServer(host, port)
-	server.start()
-	server.listen()
-
-	resp = server.send_command("amazing")
-
-	server.close()
-
-	sys.exit(0)
-
-	print "Playing:", song_name
-
-	print str(port)
-	print host
-	print args.song_path
-
-	# if check_if_cache_exists == False:
-	write_cache(SONG)
-	transfer_cache(SONG)
-	limits = read_cache(SONG)
-
-	m = np.matrix(limits)
-	print "max: ", m.max()
-	print "mean:", m.mean()
-	print "newmin: ", m.mean() - (m.max() - m.mean())
-
-	d = wave.open(os.path.abspath(SONG))
-	p = pa.PyAudio()
-
-	print str(d.getnchannels())
-	print str(d.getframerate())
-	print str(d.getsampwidth())
-
-	stream = p.open(format=p.get_format_from_width(d.getsampwidth()),
-		channels=d.getnchannels(),
-		rate=d.getframerate(),
-		output=True)
-
-	sample_rate = d.getframerate()
-	data = d.readframes(CHUNK_SIZE)
-	it = 0
-
-	conn = prepare_socket()
-	conn.send('kek')
-
-	while data != '':
-		it += 1
-		stream.write(data)
-		data = d.readframes(CHUNK_SIZE)
-
-	conn.send('')
-	print "Finished stream thing"
-
-	conn.close()
-	close_socket()
-
-	stream.stop_stream()
-	stream.close()
-
-	p.terminate()
-
-	print "done lol"
-
-if __name__ == '__main__':
-	try:
-		main()
-	except KeyboardInterrupt:
-		print "Exit(1): KeyboardInterrupt"
-		close_socket()
+"""
