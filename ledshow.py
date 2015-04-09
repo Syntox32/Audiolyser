@@ -3,7 +3,9 @@ import spidev
 import fcntl
 import spidev
 import threading
+import random
 import os
+from timeit import Timer
 
 import wave, sys, fft, math, gzip, base64, socket
 import alsaaudio as aa
@@ -12,8 +14,7 @@ import ntpath as nt
 
 from os.path import abspath, basename, splitext, isfile
 from argparse import ArgumentParser
-
-CHUNK_SIZE = 2048
+from cachehandler import Cache
 
 class LEDDevice():
 	def __init__(self, numleds, x=0, d=0):
@@ -147,6 +148,7 @@ class LEDServer:
 		return r
 
 	def send_command(self, command):
+		#print "sending command"
 		self.connection.sendall(command)
 		r = self.connection.recv(self.buffer_size)
 		if r == 'True':
@@ -178,90 +180,6 @@ class LEDServer:
 			self._socket.close()
 			self.running = False
 
-class Cache(object):
-	@staticmethod
-	def write_cache(limits, path):
-		if limits is None:
-			print "Warning: 'limits' is null"
-		print "Creating cache file:", path
-		with gzip.open(path, 'wb') as f:
-			for i in range(0, len(limits)):
-				f.write(",".join([str(limits[i][j]) for j in range(0, len(limits[i]))]) + "\n")
-
-	@staticmethod
-	def read_cache(path):
-		limits = []
-		print "Reading cache:", basename(path)
-		with gzip.open(path, 'rb') as f:
-			line = f.readline()
-			while line != '' or line == '\n':
-				line = line.replace('\n', '').split(',')
-				limits.append([float(line[i]) for i in range(0, len(line))])
-				line = f.readline()
-		print "Cache reading completed: {0} entries read".format(str(len(limits)))
-		return limits
-
-	@staticmethod
-	def transfer_cache(ledsocket, filename):
-		ledsocket.send(filename)
-		hascache = ledsocket.send_command("hascache")
-		if hascache:
-			print "Cache already exists.."
-			return False
-		else:
-			print "Cache is needed.."
-		print "Transfering cache:", filename
-		with open(filename, 'rb') as f:
-			data = f.read(ledsocket.buffer_size)
-			ledsocket.send(data)
-			l = len(data)
-			while data != '':
-				data = f.read(ledsocket.buffer_size)
-				ledsocket.send(data)
-				l += len(data)
-			print "Sent {0} bytes".format(str(l))
-		print "Cache transfered successfully"
-		return True
-
-	@staticmethod
-	def recieve_cache(ledsocket):
-		filename = ledsocket.recv()
-		#TODO: basename behaves differently on windows and linux
-		path = abspath(nt.basename(filename))
-		exists = isfile(path)
-		cmd = ledsocket.wait_command("hascache", exists)
-		if exists == True:
-			print "Cache already exists.."
-			return path
-		print "Cache does not exist, recieving cache.."
-		with open(path, 'wb') as f:
-			data = ledsocket.recv()
-			l = len(data)
-			while data != '':
-				f.write(data)
-				data = ledsocket.recv()
-				l += len(data)
-			print "Recieved {0} bytes".format(str(l))
-		print "Recieved cache:", path
-		return path
-
-	@staticmethod
-	def get_name_from_path(filepath):
-		return splitext(basename(filename))[0] + ".cache"
-
-	@staticmethod
-	def get_cache_name(filename):
-		return splitext(basename(filename))[0] + ".cache"
-
-	@staticmethod
-	def get_cache_path(filename):
-		return abspath(splitext(basename(filename))[0] + ".cache")
-
-	@staticmethod
-	def check_cache_exists(filename):
-		print "Checking if exist:", abspath(basename(filename))
-		return isfile(abspath(basename(filename)))
-
 def main():
 	"""
 	Server for the RPi LED thing
@@ -269,9 +187,10 @@ def main():
 	parser = ArgumentParser(description='Server for RPi LEDs')
 	parser.add_argument('-p', '--port', type=int, default=1337)
 	parser.add_argument('-i', '--host-address', required=False)
-	parser.add_argument('-s', '--song-path', required=True)
+	parser.add_argument('-s', '--song-path', required=False)
+	parser.add_argument('-c', '--channel', type=int, default=2)
 	args = parser.parse_args()
-
+	
 	host = ''
 	if args.host_address is None:
 		host = socket.gethostbyname(socket.gethostname())
@@ -279,27 +198,27 @@ def main():
 		host = args.host_address
 	
 	port = args.port
-	song = abspath(args.song_path)
-	song_name = basename(song)
-	chunk_size = 2048
 
 	server = LEDServer(host, port)
 	server.start()
 	server.listen()
 
-	spi = LEDDevice(32, 0, 0)
-	spi.open()
-
 	fname = Cache.recieve_cache(server)
 	levels = Cache.read_cache(fname)
 
-	print "Playing:", song_name
+	song = abspath(fname)
+	song_name = basename(fname)
+	chunk_size = 2048
+
+	spi = LEDDevice(32, 0, 0)
+	spi.open()
+
 
 	LEDS = []
 	for i in range(0, 32):
 		l = []
 		for _ in range(0, i):
-			l.extend([255, 255, 255])
+			l.extend([255,0,0])
 		for _ in range(0, 32 - i):
 			l.extend([0, 0, 0])
 		LEDS.append(l)
@@ -310,7 +229,7 @@ def main():
 
 	# Create a dummy stream for syncing the audio
 	# Seems to work better then expected
-	musicfile = wave.open("downtheroad.wav", 'r')
+	musicfile = wave.open("world.wav", 'r') #splitext(song_name)[0]+".wav", 'r')
 	sample_rate = musicfile.getframerate()
 	num_channels = musicfile.getnchannels()
 	output = aa.PCM(aa.PCM_PLAYBACK, aa.PCM_NORMAL)
@@ -319,21 +238,33 @@ def main():
 	output.setformat(aa.PCM_FORMAT_S16_LE)
 	output.setperiodsize(chunk_size)
 
+	#t = Timer(lambda: musicfile.readframes(chunk_size))
+	#print "KWODAKWOD: ", str(t.timeit())
+
 	data = musicfile.readframes(chunk_size)
+	#data = buffer(''.join([str(random.randint(0, 256)) for _ in range(0, 2048)]), 0, 2048)
+	#ata = np.random.random_sample(chunk_size)
 
-	server.wait_command("go", True)
+	server.send_command("go")
+	print "Playing:", song_name
 
+	t = time.clock()
 	while data != '':
+		#server.recv()
 		output.write(data)
 		it += 1
-		if it >= 31:
-			it = 0
-		l = (int((levels[i][2] - 6) * 3)) + 1
+		#if it >= 31:
+			#it = 0
+		l = (int((levels[i][args.channel] - 6) * 3)) + 1
 		i += 1
 		spi.write_gc(LEDS[l][::-1])
 		prev = l
 
-		data = musicfile.readframes(chunk_size)
+		j = time.clock()
+	 	print "Time: " + str((j - t) / it)
+
+		#data = musicfile.readframes(chunk_size)
+		#time.sleep(0.046)
 
 	spi.close()
 	server.close()
