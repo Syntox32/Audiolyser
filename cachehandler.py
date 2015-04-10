@@ -1,15 +1,20 @@
 import gzip
+import wave
 import posixpath as nx
 import ntpath as nt
+from base64 import b64encode, b64decode
 from os.path import abspath, basename, splitext, isfile
 
 class Cache(object):
 	@staticmethod
-	def write_cache(limits, path):
+	def write_cache(limits, path, sync_chunk):
 		if limits is None:
 			print "Warning: 'limits' is null"
-		print "Creating cache file:", path
+		sc = b64encode(sync_chunk)
+		print "Chunk length:", str(len(sc))
 		with gzip.open(path, 'wb') as f:
+			f.write(str(len(sc)))
+			f.write(sc)
 			for i in range(0, len(limits)):
 				f.write(",".join([str(limits[i][j]) for j in range(0, len(limits[i]))]) + "\n")
 
@@ -18,13 +23,17 @@ class Cache(object):
 		limits = []
 		print "Reading cache:", basename(path)
 		with gzip.open(path, 'rb') as f:
+			chunk_len = int(f.read(5))
+			sync_chunk = b64decode(f.read(chunk_len))
+			print "Chunk length:", chunk_len
 			line = f.readline()
+			line = line[len(line) - chunk_len:]
 			while line != '' or line == '\n':
 				line = line.replace('\n', '').split(',')
 				limits.append([float(line[i]) for i in range(0, len(line))])
 				line = f.readline()
 		print "Cache reading completed: {0} entries read".format(str(len(limits)))
-		return limits
+		return (sync_chunk, limits)
 
 	@staticmethod
 	def transfer_cache(ledsocket, filename, force_transfer=False):
@@ -44,7 +53,7 @@ class Cache(object):
 			data = f.read(ledsocket.buffer_size)
 			ledsocket.send(data)
 			l = len(data)
-			while len(data) != 0: #data != '':
+			while len(data) != 0: # data != '':
 				data = f.read(ledsocket.buffer_size)
 				if len(data) == 0:
 					print "__EOF__"
@@ -55,7 +64,7 @@ class Cache(object):
 				#if len(data) > 0:
 				#	print len(data)
 			print "Sent {0} bytes".format(str(l))
-		#ledsocket.recv()
+		#ledsocket.send_command("usuk")
 		print "Cache transfered successfully"
 		return True
 
@@ -96,7 +105,7 @@ class Cache(object):
 					print str(len(data))
 			print "__EOF__"
 			print "Recieved {0} bytes".format(str(l))
-		#ledsocket.send("usuk")
+		#ledsocket.wait_command("usuk", True)
 		print "Recieved cache:", path
 		return path
 

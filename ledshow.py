@@ -143,7 +143,7 @@ class LEDServer:
 		r = self.connection.recv(self.buffer_size)
 		while r != command:
 			r = self.connection.recv(self.buffer_size)
-		#print "Recieved command:", command
+		# print "Recieved command:", command
 		self.connection.sendall(str(resp))
 		return r
 
@@ -204,7 +204,7 @@ def main():
 	server.listen()
 
 	fname = Cache.recieve_cache(server)
-	levels = Cache.read_cache(fname)
+	(sync_chunk, levels) = Cache.read_cache(fname)
 
 	song = abspath(fname)
 	song_name = basename(fname)
@@ -229,42 +229,43 @@ def main():
 
 	# Create a dummy stream for syncing the audio
 	# Seems to work better then expected
-	musicfile = wave.open("world.wav", 'r') #splitext(song_name)[0]+".wav", 'r')
-	sample_rate = musicfile.getframerate()
-	num_channels = musicfile.getnchannels()
+	# musicfile = wave.open("world.wav", 'r') #splitext(song_name)[0]+".wav", 'r')
+
+	sample_rate = 44100 # int(server.wait_command("sample_rate", True)) #44100 #musicfile.getframerate()
+	num_channels = 2 # int(server.wait_command("channels", True)) #2 #musicfile.getnchannels()
 	output = aa.PCM(aa.PCM_PLAYBACK, aa.PCM_NORMAL)
 	output.setchannels(num_channels)
 	output.setrate(sample_rate)
 	output.setformat(aa.PCM_FORMAT_S16_LE)
 	output.setperiodsize(chunk_size)
 
-	#t = Timer(lambda: musicfile.readframes(chunk_size))
-	#print "KWODAKWOD: ", str(t.timeit())
+	# t = Timer(lambda: musicfile.readframes(chunk_size))
+	# print "KWODAKWOD: ", str(t.timeit())
 
-	data = musicfile.readframes(chunk_size)
-	#data = buffer(''.join([str(random.randint(0, 256)) for _ in range(0, 2048)]), 0, 2048)
-	#ata = np.random.random_sample(chunk_size)
+	data = sync_chunk # musicfile.readframes(chunk_size)
+	# data = buffer(''.join([str(random.randint(0, 256)) for _ in range(0, 2048)]), 0, 2048)
+	# ata = np.random.random_sample(chunk_size)
 
 	server.send_command("go")
 	print "Playing:", song_name
 
 	t = time.clock()
 	while data != '':
-		#server.recv()
+		# server.recv()
 		output.write(data)
 		it += 1
-		#if it >= 31:
-			#it = 0
+		# if it >= 31:
+			# it = 0
 		l = (int((levels[i][args.channel] - 6) * 3)) + 1
 		i += 1
 		spi.write_gc(LEDS[l][::-1])
 		prev = l
 
 		j = time.clock()
-	 	print "Time: " + str((j - t) / it)
+	 	# print "Time: " + str((j - t) / it)
 
-		#data = musicfile.readframes(chunk_size)
-		#time.sleep(0.046)
+		# data = musicfile.readframes(chunk_size)
+		# time.sleep(0.046)
 
 	spi.close()
 	server.close()

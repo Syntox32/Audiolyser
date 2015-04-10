@@ -33,7 +33,7 @@ class LEDClient:
 		r = self._socket.recv(self.buffer_size)
 		while r != command:
 			r = self._socket.recv(self.buffer_size)
-		#print "Recieved command:", command
+		# print "Recieved command:", command
 		self._socket.sendall(str(resp))
 		return r
 
@@ -88,6 +88,7 @@ def main():
 	parser.add_argument('-i', '--host-address', required=True)
 	parser.add_argument('-s', '--song-path', required=True)
 	parser.add_argument('-f', '--force-cache', action='store_true')
+	parser.add_argument('-c', '--chunk-sync', action='store_true')
 	# TODO: Add verbose argument
 	# TODO: Actually implement --force-cache
 	args = parser.parse_args()
@@ -98,25 +99,28 @@ def main():
 	song_name = basename(song)
 	cache_name = Cache.get_cache_path(song)
 	force_cache = args.force_cache
+	chunk_sync = args.chunk_sync
 	
 	client = LEDClient(host, port)
 	client.connect()
 
 	limits = LimitsHandler()
 	
-	f = wave.open(song)
-	levels = limits.generate_limits(f)
-	
-	Cache.write_cache(levels, cache_name)
-	#Cache.read_cache(cache_name)
-	succ = Cache.transfer_cache(client, cache_name)
+	# f = wave.open(song)
+	f = open(song, 'rb')
+	d = wave.open(f)
+	data = d.readframes(limits.chunk_size)
+	levels = limits.generate_limits(d)
+	print "lenght shit fuck damnit:", len(data)
+	Cache.write_cache(levels, cache_name, data)
+	# Cache.read_cache(cache_name)
+	succ = Cache.transfer_cache(client, cache_name, force_cache)
 
-	d = wave.open(abspath(song))
 	p = pa.PyAudio()
+	d = wave.open(song)
 
-	#print str(d.getnchannels())
-	#print str(d.getframerate())
-	#print str(d.getsampwidth())
+	#client.send_command(str(d.getframerate()))
+	#client.send_command(str(d.getnchannels()))
 
 	stream = p.open(format=p.get_format_from_width(d.getsampwidth()),
 		channels=d.getnchannels(),
@@ -136,7 +140,7 @@ def main():
 		it += 1
 		stream.write(data)
 	 	j = time.clock()
-	 	print "Time: " + str((j - t) / it)
+	 	# print "Time: " + str((j - t) / it)
 		data = d.readframes(limits.chunk_size)
 
 	print "Finished stream thing"
