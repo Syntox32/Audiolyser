@@ -7,33 +7,38 @@ from os.path import abspath, basename, splitext, isfile
 
 class Cache(object):
 	@staticmethod
-	def write_cache(limits, path, sync_chunk):
+	def write_cache(limits, path, song, chunk_size=2048):
 		if limits is None:
 			print "Warning: 'limits' is null"
-		sc = b64encode(sync_chunk)
-		print "Chunk length:", str(len(sc))
+		with open(song, 'rb') as fi:
+			wf = wave.open(fi)
+			sample_rate = str(wf.getframerate())
+			channels = str(wf.getnchannels())
+			chunk = wf.readframes(chunk_size)
 		with gzip.open(path, 'wb') as f:
-			f.write(str(len(sc)))
-			f.write(sc)
+			f.write(sample_rate + ":")      # index 0
+			f.write(channels + ":")         # index 1
+			f.write(b64encode(chunk) + ":") # index 2
+			values = []
 			for i in range(0, len(limits)):
-				f.write(",".join([str(limits[i][j]) for j in range(0, len(limits[i]))]) + "\n")
+				values.append(",".join([str(limits[i][j]) for j in range(0, len(limits[i]))]))
+			f.write(';'.join(values))       # index 3
 
 	@staticmethod
 	def read_cache(path):
 		limits = []
 		print "Reading cache:", basename(path)
 		with gzip.open(path, 'rb') as f:
-			chunk_len = int(f.read(5))
-			sync_chunk = b64decode(f.read(chunk_len))
-			print "Chunk length:", chunk_len
-			line = f.readline()
-			line = line[len(line) - chunk_len:]
-			while line != '' or line == '\n':
-				line = line.replace('\n', '').split(',')
+			data = f.read().split(':')
+			sample_rate = int(data[0])
+			channels = int(data[1])
+			chunk = b64decode(data[2])
+			values = data[3].split(';')
+			for val in values:
+				line = val.split(',')
 				limits.append([float(line[i]) for i in range(0, len(line))])
-				line = f.readline()
 		print "Cache reading completed: {0} entries read".format(str(len(limits)))
-		return (sync_chunk, limits)
+		return (sample_rate, channels, chunk, limits)
 
 	@staticmethod
 	def transfer_cache(ledsocket, filename, force_transfer=False):
@@ -53,18 +58,15 @@ class Cache(object):
 			data = f.read(ledsocket.buffer_size)
 			ledsocket.send(data)
 			l = len(data)
-			while len(data) != 0: # data != '':
+			while len(data) != 0:
 				data = f.read(ledsocket.buffer_size)
 				if len(data) == 0:
-					print "__EOF__"
+					#print "__EOF__"
 					ledsocket.send("__EOF__")
 					break
 				ledsocket.send(data)
 				l += len(data)
-				#if len(data) > 0:
-				#	print len(data)
 			print "Sent {0} bytes".format(str(l))
-		#ledsocket.send_command("usuk")
 		print "Cache transfered successfully"
 		return True
 
@@ -98,14 +100,13 @@ class Cache(object):
 					d = data[:len(data) - len("__EOF__")]
 					l += len(d)
 					f.write(d)
-					print str(len(d))
+					#print str(len(d))
 				else:
 					f.write(data)
 					l += len(data)
-					print str(len(data))
-			print "__EOF__"
+					#print str(len(data))
+			#print "__EOF__"
 			print "Recieved {0} bytes".format(str(l))
-		#ledsocket.wait_command("usuk", True)
 		print "Recieved cache:", path
 		return path
 
