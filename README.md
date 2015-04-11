@@ -1,10 +1,18 @@
-# ProjectLED #
+# Audiolyser #
 
-ProjectLED is a repository for keeping track of my adventures creating an audio visualizer with 32 RGB LEDs connected to my RaspberryPi
+Audiolyser is a repository for keeping track of my adventures creating an audio visualizer with 32 RGB LEDs connected to my RaspberryPi
 
-# How to start it currently #
+# Example Usage #
 
-INSUFFICIENT DATA FOR MEANINGFUL ANSWER
+If you're brave enough to tackle all the errors that will occur, you can try run this:  
+```
+(Windows/Client) python ledclient.py -i <rpi-ip> -p <port> -s <song-path> [--force-cache]
+```
+```
+(RPi/Server)     sudo python ledserver.py -i <rpi-ip> -p <port> [--channel <primary-channel>]
+```
+Currently the client code has only been tested on windows, but should in theory run on any unix system with little to no modifications.  
+The songs also needs to in the .WAV format, mp3 support is still not implemented..
 
 # Wiring #
 Your LED strip might look a bit different, mine had 6 cables.  
@@ -35,19 +43,15 @@ Black : GND
 ```
 
 # Requirements #
-Currently the project is using **Python 2.7**    
-  You also need the current libraries to be installed:  
+Currently the project is using **Python 2.7**  
+You also need the current libraries to be installed:  
 ```
-Server(Raspberry Pi):  
- 1. spidev
- 2. numpy
- 3. alsaaudio[temp]  
+Raspberry Pi: 
+* spidev  
+* numpy  
+* alsaaudio[temp]  
 
-Client(Your computer):  
- 1. numpy
- 2. pyaudio
+Windows:  
+* numpy  
+* pyaudio  
 ```
-
-d:\python27\python.exe music-test.py -i 192.168.1.108 -p 1337 -s downtheroad.wav
-
-sudo python ledshow.py -i 192.168.1.108 -p 1337 -s downtheroad.wav

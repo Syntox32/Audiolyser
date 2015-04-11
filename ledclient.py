@@ -132,7 +132,7 @@ def main():
 	parser.add_argument('-i', '--host-address', required=True)
 	parser.add_argument('-s', '--song-path', required=True)
 	parser.add_argument('-f', '--force-cache', action='store_true')
-	parser.add_argument('-c', '--chunk-sync', action='store_true') # default
+	#parser.add_argument('-c', '--chunk-sync', action='store_true') # default
 	# TODO: Add verbose argument
 	args = parser.parse_args()
 
@@ -142,7 +142,7 @@ def main():
 	song_name = basename(song)
 	cache_name = Cache.get_cache_path(song)
 	force_cache = args.force_cache
-	chunk_sync = args.chunk_sync = True
+	# chunk_sync = True #args.chunk_sync
 	
 	client = LEDClient(host, port)
 	client.connect()
