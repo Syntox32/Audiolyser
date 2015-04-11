@@ -33,7 +33,6 @@ class LEDClient:
 		r = self._socket.recv(self.buffer_size)
 		while r != command:
 			r = self._socket.recv(self.buffer_size)
-		# print "Recieved command:", command
 		self._socket.sendall(str(resp))
 		return r
 
@@ -46,7 +45,7 @@ class LEDClient:
 		elif r == 'False':
 			return False
 		else:
-			print "no quantum computers allowed"
+			print "no quantum computers allowed, please"
 			return False
 	
 	def send(self, data):
@@ -79,6 +78,51 @@ class LimitsHandler():
 			data = wave_file.readframes(self.chunk_size)
 		return limits
 
+def norm(val, minval, maxval):
+	return (val - minval) / (maxval - minval)
+
+def play(client, song, song_name, cache_name, force_cache):
+	limits = LimitsHandler()
+	
+	with open(song, 'rb') as f:
+		d = wave.open(f)
+		levels = limits.generate_limits(d)
+		Cache.write_cache(levels, cache_name, song, limits.chunk_size)
+		succ = Cache.transfer_cache(client, cache_name, force_cache)
+
+	p = pa.PyAudio()
+	d = wave.open(song)
+
+	stream = p.open(
+		format = p.get_format_from_width(d.getsampwidth()),
+		channels = d.getnchannels(),
+		rate = d.getframerate(),
+		output = True)
+
+	sample_rate = d.getframerate()
+	data = d.readframes(limits.chunk_size)
+
+	try:
+		client.wait_command("go", True)
+		print "Playing:", song_name
+
+		while data != '':
+			stream.write(data)
+			data = d.readframes(limits.chunk_size)
+	except KeyboardInterrupt:
+		print "KeyboardInterrupt: Closing streams.."
+	except IOError:
+		print "Lost connection to server, closing streams.."
+	except:
+		print "fuck if i know:", sys.exc_info()[0]
+	finally:
+		stream.stop_stream()
+		stream.close()
+		p.terminate()
+
+	print "Done, streams closed.."
+	print "Finished playing:", song_name
+
 def main():
 	"""
 	Client for the RPi LED thing
@@ -88,9 +132,8 @@ def main():
 	parser.add_argument('-i', '--host-address', required=True)
 	parser.add_argument('-s', '--song-path', required=True)
 	parser.add_argument('-f', '--force-cache', action='store_true')
-	parser.add_argument('-c', '--chunk-sync', action='store_true')
+	parser.add_argument('-c', '--chunk-sync', action='store_true') # default
 	# TODO: Add verbose argument
-	# TODO: Actually implement --force-cache
 	args = parser.parse_args()
 
 	port = args.port
@@ -99,60 +142,18 @@ def main():
 	song_name = basename(song)
 	cache_name = Cache.get_cache_path(song)
 	force_cache = args.force_cache
-	chunk_sync = args.chunk_sync
+	chunk_sync = args.chunk_sync = True
 	
 	client = LEDClient(host, port)
 	client.connect()
-
-	limits = LimitsHandler()
 	
-	# f = wave.open(song)
-	f = open(song, 'rb')
-	d = wave.open(f)
-	data = d.readframes(limits.chunk_size)
-	levels = limits.generate_limits(d)
-	print "lenght shit fuck damnit:", len(data)
-	Cache.write_cache(levels, cache_name, data)
-	# Cache.read_cache(cache_name)
-	succ = Cache.transfer_cache(client, cache_name, force_cache)
-
-	p = pa.PyAudio()
-	d = wave.open(song)
-
-	#client.send_command(str(d.getframerate()))
-	#client.send_command(str(d.getnchannels()))
-
-	stream = p.open(format=p.get_format_from_width(d.getsampwidth()),
-		channels=d.getnchannels(),
-		rate=d.getframerate(),
-		output=True)
-
-	sample_rate = d.getframerate()
-	data = d.readframes(limits.chunk_size)
-	it = 0
-
-	client.wait_command("go", True)
-	print "Playing:", song_name
-
-	median = 0
-	t = time.clock()
-	while data != '':
-		it += 1
-		stream.write(data)
-	 	j = time.clock()
-	 	# print "Time: " + str((j - t) / it)
-		data = d.readframes(limits.chunk_size)
-
-	print "Finished stream thing"
-
-	stream.stop_stream()
-	stream.close()
-	p.terminate()
-
+	try:
+		play(client, song, song_name, cache_name, force_cache)
+	except Exception as e:
+		print "Error:", e
+		
+	print "Closing connection.."
 	client.close()
 	
 if __name__ == '__main__':
-	try:
-		main()
-	except KeyboardInterrupt:
-		print "Closing due to KeyboardInterrupt.."
+	main()

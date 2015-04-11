@@ -1,10 +1,11 @@
+import os
+import sys
 import time
 import spidev
 import fcntl
 import spidev
 import threading
 import random
-import os
 from timeit import Timer
 
 import wave, sys, fft, math, gzip, base64, socket
@@ -24,7 +25,7 @@ class LEDDevice():
 		Parameter x and d are representative of the location of the device:
 			/dev/spidev{bus=x}.{device=d}
 
-		Credits to Doceme for the py-spidev project
+		Credits to Doceme for the spidev python port
 		https://github.com/doceme/py-spidev
 
 		Credits to Scott Gibson for the gamma correction
@@ -180,6 +181,72 @@ class LEDServer:
 			self._socket.close()
 			self.running = False
 
+def norm(val, minval, maxval):
+	return (val - minval) / (maxval - minval)
+
+def play(server, spi, channel):
+	fname = Cache.recieve_cache(server)
+	(sr, c, chunk, levels) = Cache.read_cache(fname)
+
+	song = abspath(fname)
+	song_name = basename(fname)
+	chunk_size = 2048
+
+	LEDS = []
+	for i in range(0, 32):
+		l = []
+		for _ in range(0, i):
+			l.extend([255,0,0])
+		for _ in range(0, 32 - i):
+			l.extend([0, 0, 0])
+		LEDS.append(l)
+
+	it = 1
+	i = 0
+	l = 0
+	prev = 0
+
+	m = np.matrix(levels)
+	lvlmax = m.max()
+	lvlmean =  m.mean()
+	lvllow = m.mean() - (m.max()-m.mean())
+
+	# Create a dummy stream for syncing the audio
+	# Seems to work better then expected
+	sample_rate = sr
+	num_channels = c
+	output = aa.PCM(aa.PCM_PLAYBACK, aa.PCM_NORMAL)
+	output.setchannels(num_channels)
+	output.setrate(sample_rate)
+	output.setformat(aa.PCM_FORMAT_S16_LE)
+	output.setperiodsize(chunk_size)
+
+	data = chunk
+
+	try:
+		server.send_command("go")
+		print "Playing:", song_name
+
+		while data != '':
+			output.write(data)
+			it += 1
+			# if it >= 31:
+				# it = 0
+			l = (int((levels[i][int(channel)] - 6) * 3)) + 1
+			i += 1
+			spi.write_gc(LEDS[l][::-1]) # norm(LEDS[l], lvllow, lvlmax))
+			prev = l
+	except KeyboardInterrupt:
+		print "KeyboardInterrupt: Closing streams.."
+	except IOError:
+		print "Lost connection to the client, closing streams.."
+	except:
+		print "fuck if i know:", sys.exc_info()[0]
+	finally:
+		spi.all_off()
+
+	print "Finished playing:", song_name
+
 def main():
 	"""
 	Server for the RPi LED thing
@@ -203,76 +270,16 @@ def main():
 	server.start()
 	server.listen()
 
-	fname = Cache.recieve_cache(server)
-	(sync_chunk, levels) = Cache.read_cache(fname)
-
-	song = abspath(fname)
-	song_name = basename(fname)
-	chunk_size = 2048
-
 	spi = LEDDevice(32, 0, 0)
 	spi.open()
 
-
-	LEDS = []
-	for i in range(0, 32):
-		l = []
-		for _ in range(0, i):
-			l.extend([255,0,0])
-		for _ in range(0, 32 - i):
-			l.extend([0, 0, 0])
-		LEDS.append(l)
-
-	it = 1
-	i = 0
-	prev = 0
-
-	# Create a dummy stream for syncing the audio
-	# Seems to work better then expected
-	# musicfile = wave.open("world.wav", 'r') #splitext(song_name)[0]+".wav", 'r')
-
-	sample_rate = 44100 # int(server.wait_command("sample_rate", True)) #44100 #musicfile.getframerate()
-	num_channels = 2 # int(server.wait_command("channels", True)) #2 #musicfile.getnchannels()
-	output = aa.PCM(aa.PCM_PLAYBACK, aa.PCM_NORMAL)
-	output.setchannels(num_channels)
-	output.setrate(sample_rate)
-	output.setformat(aa.PCM_FORMAT_S16_LE)
-	output.setperiodsize(chunk_size)
-
-	# t = Timer(lambda: musicfile.readframes(chunk_size))
-	# print "KWODAKWOD: ", str(t.timeit())
-
-	data = sync_chunk # musicfile.readframes(chunk_size)
-	# data = buffer(''.join([str(random.randint(0, 256)) for _ in range(0, 2048)]), 0, 2048)
-	# ata = np.random.random_sample(chunk_size)
-
-	server.send_command("go")
-	print "Playing:", song_name
-
-	t = time.clock()
-	while data != '':
-		# server.recv()
-		output.write(data)
-		it += 1
-		# if it >= 31:
-			# it = 0
-		l = (int((levels[i][args.channel] - 6) * 3)) + 1
-		i += 1
-		spi.write_gc(LEDS[l][::-1])
-		prev = l
-
-		j = time.clock()
-	 	# print "Time: " + str((j - t) / it)
-
-		# data = musicfile.readframes(chunk_size)
-		# time.sleep(0.046)
+	try:
+		play(server, spi, args.channel)
+	except Exception as e:
+		print "Error:", e
 
 	spi.close()
 	server.close()
 
 if __name__ == '__main__':
-	print "So far so good.."
-	try:
-		main()
-	except KeyboardInterrupt:
-		print "losing down.."
+	main()
