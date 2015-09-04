@@ -2,6 +2,8 @@
 
 Audiolyser is a repository for keeping track of my adventures creating an audio visualizer with 32 RGB LEDs connected to my RaspberryPi
 
+[Here you can see it in action!](http://s1.webmshare.com/1L6Rz.webm)
+
 # Example Usage #
 
 If you're brave enough to tackle all the errors that will occur, you can try run this:  
